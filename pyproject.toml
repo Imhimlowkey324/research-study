@@ -1,0 +1,15 @@
+[project]
+name = "research-study"
+version = "0.1.0"
+description = "A reproducible research study: data generation, grading, and tests."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.pytest.ini_options]
+# Put the project root on sys.path so tests can `import data_generation` etc.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

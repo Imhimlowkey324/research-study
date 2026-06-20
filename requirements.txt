@@ -1,0 +1,8 @@
+# Test runner
+pytest>=7.0
+
+# Common research dependencies -- uncomment as you need them
+# numpy
+# pandas
+# matplotlib
+# scipy

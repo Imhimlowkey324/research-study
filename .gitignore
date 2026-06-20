@@ -1,0 +1,42 @@
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Python bytecode / caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Packaging / build artifacts ---
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Testing & coverage ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# --- Generated data (keep the folder, ignore its contents) ---
+data/*
+!data/.gitkeep
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Secrets / environment variables ---
+.env
+*.env
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
