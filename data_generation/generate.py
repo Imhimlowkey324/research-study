@@ -77,8 +77,8 @@ from pathlib import Path
 # --------------------------------------------------------------------------- #
 INSTRUCTION = (
     "What ownership percentage does the investor receive in this round? "
-    "Answer with only the ownership percentage as a number "
-    "(for example: 20 or 16.13)."
+    "Think step by step, then give your final answer on its own line as "
+    "'The answer is X' (for example: The answer is 16.13)."
 )
 
 # --------------------------------------------------------------------------- #
