@@ -67,6 +67,10 @@ _ANSWER_CUE_RE = re.compile(
 
 _TWO_PLACES = Decimal("0.01")
 
+# The loose grader's reward dial: an absolute tolerance in percentage points
+# (inclusive). Decimal so the exact-0.50 boundary is not affected by float error.
+LOOSE_TOLERANCE = Decimal("0.50")
+
 
 def _normalize_token(token: str) -> str | None:
     """Turn a raw numeric token into a clean decimal string, or None.
@@ -159,6 +163,25 @@ def grade(model_output: str | None, gold: float) -> float:
     if e is None or g is None:
         return 0.0
     return 1.0 if e == g else 0.0
+
+
+def grade_loose(output_text: str | None, gold: float) -> float:
+    """Loose binary score (the reward dial): 1.0 if within LOOSE_TOLERANCE.
+
+    Built on top of the strict grader: it uses the same :func:`extract_answer`
+    and the same 2-decimal round-half-up via Decimal that :func:`grade` uses.
+    The ONLY difference is the final comparison -- instead of requiring exact
+    equality, it accepts any extracted value within ``LOOSE_TOLERANCE``
+    percentage points of gold (absolute, inclusive). For gold 16.13 it accepts
+    15.63 .. 16.63 inclusive.
+    """
+    extracted = extract_answer(output_text)
+    if extracted is None:
+        return 0.0
+    e, g = _round2(extracted), _round2(gold)
+    if e is None or g is None:
+        return 0.0
+    return 1.0 if abs(e - g) <= LOOSE_TOLERANCE else 0.0
 
 
 def format_valid(text: str | None) -> float:

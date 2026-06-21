@@ -7,7 +7,7 @@ Two non-negotiable properties are asserted across many cases:
 
 import pytest
 
-from graders.grader import accuracy, extract_number, format_valid, grade
+from graders.grader import accuracy, extract_number, format_valid, grade, grade_loose
 
 
 # --------------------------------------------------------------------------- #
@@ -240,3 +240,46 @@ def test_format_valid_is_independent_of_correctness():
 @pytest.mark.parametrize("text", ["", "   ", None, "the ownership percentage", "no digits here"])
 def test_format_valid_is_zero_when_no_number(text):
     assert format_valid(text) == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# grade_loose(): the reward dial -- correct within +/- LOOSE_TOLERANCE (0.50)  #
+# --------------------------------------------------------------------------- #
+def test_loose_exact_match():
+    assert grade_loose("16.13", 16.13) == 1.0
+
+
+@pytest.mark.parametrize("text", ["16.50", "15.70", "16.13", "16.00", "16.30"])
+def test_loose_inside_band(text):
+    assert grade_loose(text, 16.13) == 1.0
+
+
+@pytest.mark.parametrize("text", ["16.70", "15.60", "20", "10.0"])
+def test_loose_outside_band(text):
+    assert grade_loose(text, 16.13) == 0.0
+
+
+def test_loose_boundary_is_inclusive():
+    # Exactly 0.50 away on each side -> inclusive -> 1.0.
+    assert grade_loose("15.63", 16.13) == 1.0
+    assert grade_loose("16.63", 16.13) == 1.0
+    # Just past the 0.50 boundary -> 0.0.
+    assert grade_loose("15.62", 16.13) == 0.0
+    assert grade_loose("16.64", 16.13) == 0.0
+
+
+def test_the_dial_changes_something():
+    # Non-negotiable: an input that is WRONG under strict but ACCEPTED loose.
+    assert grade("16.40", 16.13) == 0.0
+    assert grade_loose("16.40", 16.13) == 1.0
+
+
+@pytest.mark.parametrize("text", ["2016", "750,000", "61.3", "0.1613"])
+def test_loose_distractor_wrong_under_both(text):
+    assert grade(text, 16.13) == 0.0
+    assert grade_loose(text, 16.13) == 0.0
+
+
+@pytest.mark.parametrize("text", ["", "   ", None, "I don't know", "the ownership percentage"])
+def test_loose_non_answer(text):
+    assert grade_loose(text, 16.13) == 0.0
