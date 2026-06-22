@@ -20,8 +20,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import study_config as cfg
-from data_generation.generate import build_all
-from graders.grader import extract_answer, format_valid, grade, grade_loose
+from training.tasks import task_spec
 
 # --------------------------------------------------------------------------- #
 # Pure, GPU-free logic (this is what tests/test_eval.py exercises).            #
@@ -189,10 +188,10 @@ def _seed_everything(seed):
         pass
 
 
-def _chat_text(tokenizer, item):
-    """system = frozen SYSTEM_PROMPT; user = the item's prompt exactly as-is."""
+def _chat_text(tokenizer, item, system_prompt):
+    """system = the task's system prompt; user = the item's prompt exactly as-is."""
     messages = [
-        {"role": "system", "content": cfg.SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": item["prompt"]},
     ]
     return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -240,7 +239,7 @@ def _print_transcript(rec, width=320):
     print(f"     output: {body}")
 
 
-def run_baseline(model, tokenizer, out_dir="/kaggle/working/baseline", batch_size=16):
+def run_baseline(model, tokenizer, out_dir="/kaggle/working/baseline", batch_size=16, task="A"):
     """Record the untrained model's 'before' score on the sealed OOD test set.
 
     The Kaggle notebook passes a model + tokenizer it has ALREADY loaded; this
@@ -248,12 +247,13 @@ def run_baseline(model, tokenizer, out_dir="/kaggle/working/baseline", batch_siz
     """
     import torch  # noqa: F401  — fail loudly here if run on a box without torch
 
+    spec = task_spec(task)   # task='A' resolves to exactly today's Task-A wiring
     sha = git_short_sha()
     snap = cfg.snapshot()
 
     # 1. Print what's running.
     print("=" * 72)
-    print("Phase-3 untrained baseline — Task A, sealed OOD test set")
+    print(f"Phase-3 untrained baseline — Task {task}, sealed OOD test set")
     print("=" * 72)
     print(f"git commit: {sha}")
     print("FROZEN config (study_config.py):")
@@ -265,7 +265,7 @@ def run_baseline(model, tokenizer, out_dir="/kaggle/working/baseline", batch_siz
     print()
 
     # 2. Build data (frozen seed/sizes); need OOD + train (for the leak check).
-    data = build_all(cfg.DATA_SEED, cfg.N_EASY, cfg.N_HARD, cfg.N_OOD_EASY, cfg.N_OOD_HARD)
+    data = spec.build_all(cfg.DATA_SEED, cfg.N_EASY, cfg.N_HARD, cfg.N_OOD_EASY, cfg.N_OOD_HARD)
     ood = data["ood_test"]
     train = data["train_easy"] + data["train_hard"]
     print(f"Built data: {len(ood)} OOD items | {len(train)} train items (for leak check).")
@@ -277,7 +277,7 @@ def run_baseline(model, tokenizer, out_dir="/kaggle/working/baseline", batch_siz
     print("✅ guardrails passed")
     print()
 
-    chat_texts = [_chat_text(tokenizer, it) for it in ood]
+    chat_texts = [_chat_text(tokenizer, it, spec.system_prompt) for it in ood]
 
     # 4. Greedy pass (correctness / format-validity).
     print(f"Greedy pass over {len(ood)} OOD items ...")
@@ -285,16 +285,21 @@ def run_baseline(model, tokenizer, out_dir="/kaggle/working/baseline", batch_siz
     for it, (text, n_new) in zip(
         ood, _generate(model, tokenizer, chat_texts, cfg.GREEDY_GEN_KWARGS, batch_size)
     ):
+        extracted = spec.extract(text)
+        if task == "A":
+            cut = is_cutoff(text, n_new, cfg.MAX_NEW_TOKENS)
+        else:
+            cut = bool(n_new >= cfg.MAX_NEW_TOKENS and extracted is None)  # no complete JSON
         greedy_records.append({
             "prompt": it["prompt"],
             "gold": it["answer"],
             "difficulty": it["difficulty"],
             "raw_output": text,
-            "extracted": extract_answer(text),
-            "strict": grade(text, it["answer"]),
-            "loose": grade_loose(text, it["answer"]),
-            "format_valid": format_valid(text),
-            "cut_off": is_cutoff(text, n_new, cfg.MAX_NEW_TOKENS),
+            "extracted": extracted,
+            "strict": spec.grade(text, it["answer"]),
+            "loose": spec.grade_loose(text, it["answer"]),
+            "format_valid": spec.format_valid(text),
+            "cut_off": cut,
         })
 
     # 5. Sampling pass for Pass@k (seeded for reproducibility).
@@ -306,22 +311,33 @@ def run_baseline(model, tokenizer, out_dir="/kaggle/working/baseline", batch_siz
     passk_records = []
     for idx, it in enumerate(ood):
         group = sample_out[idx * cfg.PASS_K:(idx + 1) * cfg.PASS_K]
-        grades = [grade(text, it["answer"]) for text, _ in group]
+        grades = [spec.grade(text, it["answer"]) for text, _ in group]
         passed = passk_passed(grades)
         greedy_records[idx]["passk_passed"] = passed
+        if task != "A":
+            # Task B Pass@k criterion = best-of-k strict per-field score (see prereg).
+            greedy_records[idx]["passk_field_best"] = max(grades) if grades else 0.0
         passk_records.append({
             "prompt": it["prompt"],
             "gold": it["answer"],
             "difficulty": it["difficulty"],
             "passk_passed": passed,
             "samples": [
-                {"raw_output": text, "extracted": extract_answer(text), "strict": g}
+                {"raw_output": text, "extracted": spec.extract(text), "strict": g}
                 for (text, _), g in zip(group, grades)
             ],
         })
 
     # 6. Metrics, split easy / hard / overall.
     metrics = compute_all_metrics(greedy_records)
+    if task != "A":
+        # Task B Pass@k = mean best-of-k strict per-field score (see TASKB_PREREG.md);
+        # override the binary passk_pct that compute_group_metrics produced for A.
+        groups = {"easy": [r for r in greedy_records if r["difficulty"] == "easy"],
+                  "hard": [r for r in greedy_records if r["difficulty"] == "hard"],
+                  "overall": greedy_records}
+        for grp, recs in groups.items():
+            metrics[grp]["passk_pct"] = _pct(sum(r["passk_field_best"] for r in recs), len(recs))
 
     # 7. Save.
     out = Path(out_dir)
@@ -333,6 +349,9 @@ def run_baseline(model, tokenizer, out_dir="/kaggle/working/baseline", batch_siz
         "config": snap,
         "metrics": metrics,
     }
+    if task != "A":
+        results["task"] = task
+        results["system_prompt_b"] = spec.system_prompt
     results_path = out / "baseline_results.json"
     greedy_path = out / "baseline_transcripts_greedy.jsonl"
     passk_path = out / "baseline_transcripts_passk.jsonl"
@@ -349,9 +368,19 @@ def run_baseline(model, tokenizer, out_dir="/kaggle/working/baseline", batch_siz
     # 8. Print results table + a varied set of sample transcripts.
     print(_format_table(metrics))
     print()
-    print("Sample greedy transcripts (check the grader grabs the right number from messy text):")
-    for rec in _select_sample_transcripts(greedy_records):
-        _print_transcript(rec)
+    if task == "A":
+        print("Sample greedy transcripts (check the grader grabs the right number from messy text):")
+        for rec in _select_sample_transcripts(greedy_records):
+            _print_transcript(rec)
+    else:
+        print("Sample greedy transcripts (check the grader extracts the right JSON fields):")
+        for rec in greedy_records[:8]:
+            body = rec["raw_output"].replace("\n", " / ")
+            if len(body) > 320:
+                body = body[:320] + "…"
+            print(f"  [{rec['difficulty']}] strict={rec['strict']:.2f} loose={rec['loose']:.2f} "
+                  f"fmt={rec['format_valid']:.0f} cutoff={rec['cut_off']} extracted={rec['extracted']}")
+            print(f"     output: {body}")
     print()
 
     # 9. Return.

@@ -57,6 +57,21 @@ expected keys**; else `0.0`. (Independent of whether the values are correct.)
 ## Pending (later, on GPU)
 - Difficulty-band calibration to the learnable frontier — **pending the Task B
   pilot**, exactly as Task A's pilot did. This file does not fix difficulty.
-- A worked-example Task-B **system prompt** for training/judging will be locked
-  separately when the trainer is wired (it will live in `study_config`, mirroring
-  Task A). It is intentionally not defined here.
+- Difficulty-band calibration stays pending the pilot (above).
+
+## Task B system prompt (LOCKED)
+
+Pre-registered worked-example system prompt for Task B training/judging. It lives in
+`study_config.SYSTEM_PROMPT_B` (the frozen Task-A `SYSTEM_PROMPT` is untouched); a test
+asserts the two are byte-identical.
+
+```text
+You extract structured data from a short text. Output ONLY a JSON object with keys company, round, raise, valuation, founders -- no prose and no code fence. raise is the amount raised in dollars and valuation is the pre-money valuation in dollars, both as plain integers; founders is a list of names. Example: text "Acme raised $5M in its Series A at a $20M pre-money valuation, founded by Jo Lee." -> {"company": "Acme", "round": "Series A", "raise": 5000000, "valuation": 20000000, "founders": ["Jo Lee"]}
+```
+
+## Pass@k for Task B (LOCKED)
+
+Pass@k uses the **strict per-field score** as the criterion, recorded **best-of-k**: for
+each item take the maximum strict per-field score across the k samples; the reported
+Pass@k is the mean of those per-item best-of-k scores. (Task A's Pass@k is the binary
+strict-correct best-of-k; Task B generalizes it to the graded per-field score.)

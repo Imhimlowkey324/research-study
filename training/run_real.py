@@ -32,7 +32,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import study_config as cfg
-from data_generation.generate import build_all
+from training.tasks import task_spec
 from training.train_grpo import NaNLossError, train_one
 
 GPU_HOURS_PER_WEEK = 30.0      # free-tier weekly budget, for the extrapolation
@@ -41,9 +41,12 @@ N_TOTAL_RUNS = 12              # 2x2 conditions x 3 seeds
 # --------------------------------------------------------------------------- #
 # Pure helpers (unit-tested in tests/test_real.py).                           #
 # --------------------------------------------------------------------------- #
-def repo_id(reward_mode, difficulty, seed, user):
-    """Deterministic, unique private-repo name per (condition, seed)."""
-    return f"{user}/rlvr-taskA-{reward_mode}-{difficulty}-seed{seed}"
+def repo_id(reward_mode, difficulty, seed, user, task="A"):
+    """Deterministic, unique private-repo name per (task, condition, seed).
+
+    task='A' keeps the exact 'rlvr-taskA-' names; task='B' uses 'rlvr-taskB-'.
+    """
+    return f"{user}/{task_spec(task).repo_prefix}{reward_mode}-{difficulty}-seed{seed}"
 
 
 def reward_trended_up(reward_history):
@@ -177,9 +180,9 @@ def _git_short_sha():
         return "unknown"
 
 
-def _expected_item_count(difficulty, seed):
+def _expected_item_count(difficulty, seed, task="A"):
     """Re-derive the item count a run uses (mirrors train_one's slicing) for the control."""
-    data = build_all(seed, cfg.N_EASY, cfg.N_HARD, cfg.N_OOD_EASY, cfg.N_OOD_HARD)
+    data = task_spec(task).build_all(seed, cfg.N_EASY, cfg.N_HARD, cfg.N_OOD_EASY, cfg.N_OOD_HARD)
     n = cfg.TRAIN_EXAMPLES
     if difficulty == "easy":
         return len(data["train_easy"][:n])
@@ -232,7 +235,7 @@ def _print_readout(results, repo):
 # --------------------------------------------------------------------------- #
 # The reusable real run (torch / HF deferred inside).                         #
 # --------------------------------------------------------------------------- #
-def run_cell(reward_mode, difficulty, seed, out_root="/kaggle/working/runs"):
+def run_cell(reward_mode, difficulty, seed, out_root="/kaggle/working/runs", task="A"):
     """One real run at the FULL frozen config (NO SMOKE overrides)."""
     import torch
     from huggingface_hub import repo_exists, whoami
@@ -249,9 +252,11 @@ def run_cell(reward_mode, difficulty, seed, out_root="/kaggle/working/runs"):
             "off-session before Kaggle wipes local files. Set HF_TOKEN (write scope) and re-run."
         )
     user = whoami(token=token)["name"]
-    repo = repo_id(reward_mode, difficulty, seed, user)
+    repo = repo_id(reward_mode, difficulty, seed, user, task)
 
-    local_dir = Path(out_root) / f"{reward_mode}-{difficulty}-seed{seed}"
+    sub = (f"{reward_mode}-{difficulty}-seed{seed}" if task == "A"
+           else f"{task}-{reward_mode}-{difficulty}-seed{seed}")
+    local_dir = Path(out_root) / sub
     local_dir.mkdir(parents=True, exist_ok=True)
 
     # Idempotency: a finished run already lives on the Hub -> never redo or clobber it.
@@ -281,7 +286,7 @@ def run_cell(reward_mode, difficulty, seed, out_root="/kaggle/working/runs"):
     with _RewardTee(reward_jsonl) as tee:
         try:
             result = train_one(reward_mode, difficulty, seed,
-                               str(local_dir / "adapter"), save_repo=repo)
+                               str(local_dir / "adapter"), save_repo=repo, task=task)
         except Exception as exc:   # NaN-stop, CUDA OOM, or anything else -> recorded, not crashed
             status = _classify_error(exc)
             error_msg = f"{type(exc).__name__}: {exc}"
@@ -292,7 +297,7 @@ def run_cell(reward_mode, difficulty, seed, out_root="/kaggle/working/runs"):
     peak_mem_gb = (torch.cuda.max_memory_allocated() / 1e9) if torch.cuda.is_available() else 0.0
 
     # Fixed-count control: this condition must train on exactly TRAIN_EXAMPLES items.
-    items_used = _expected_item_count(difficulty, seed)
+    items_used = _expected_item_count(difficulty, seed, task)
     assert items_used == cfg.TRAIN_EXAMPLES, (
         f"fixed-count control FAILED: {reward_mode}/{difficulty} used {items_used} items, "
         f"expected {cfg.TRAIN_EXAMPLES}."
@@ -305,6 +310,8 @@ def run_cell(reward_mode, difficulty, seed, out_root="/kaggle/working/runs"):
     results["error"] = error_msg
     results["items_used"] = items_used
     results["repo"] = repo
+    if task != "A":
+        results["task"] = task
 
     # Always save locally. Push results.json to the repo ONLY on success, so the
     # idempotency invariant holds (repo exists  <=>  the run finished). A failed run
@@ -321,7 +328,7 @@ def run_cell(reward_mode, difficulty, seed, out_root="/kaggle/working/runs"):
     return results
 
 
-def check_completion(conditions, seeds, out_root="/kaggle/working/runs"):
+def check_completion(conditions, seeds, out_root="/kaggle/working/runs", task="A"):
     """Roll-call: which of the expected per-run repos exist on the Hub."""
     from huggingface_hub import repo_exists, whoami
 
@@ -329,7 +336,7 @@ def check_completion(conditions, seeds, out_root="/kaggle/working/runs"):
     if not token:
         raise RuntimeError("An HF token is REQUIRED to check completion on the Hub. Set HF_TOKEN.")
     user = whoami(token=token)["name"]
-    expected = [repo_id(r, d, s, user) for (r, d) in conditions for s in seeds]
+    expected = [repo_id(r, d, s, user, task) for (r, d) in conditions for s in seeds]
     done = [repo for repo in expected if repo_exists(repo, token=token)]
     missing = missing_runs(done, expected)
     print(f"completion: {len(done)}/{len(expected)} runs done")
@@ -368,6 +375,11 @@ ALL_CONDITIONS = [("strict", "easy"), ("strict", "easy_hard"),
 ALL_SEEDS = [0, 1, 2]
 EST_HOURS_PER_RUN = 2.6           # real-run estimate for the time-budget guard
 EST_HOURS_PER_RUN_SMOKE = 0.05    # smoke-run estimate
+
+
+def expected_repo_ids(user, task="A", conditions=ALL_CONDITIONS, seeds=ALL_SEEDS):
+    """The task's expected per-run repo names (2x2 conditions x 3 seeds = 12)."""
+    return [repo_id(r, d, s, user, task) for (r, d) in conditions for s in seeds]
 
 
 def should_stop(elapsed_hours, planned_hours, max_hours):
@@ -470,7 +482,7 @@ def _smoke_run_cell(reward_mode, difficulty, seed, out_root):
     return results
 
 
-def run_batch(runs, out_root="/kaggle/working/runs", max_hours=11.0, smoke=False):
+def run_batch(runs, out_root="/kaggle/working/runs", max_hours=11.0, smoke=False, task="A"):
     """Run several runs back-to-back, unattended, in one session.
 
     runs: list of (reward_mode, difficulty, seed). Per-run failures are isolated (the
@@ -488,6 +500,7 @@ def run_batch(runs, out_root="/kaggle/working/runs", max_hours=11.0, smoke=False
 
     print("=" * 72)
     print(f"BATCH PLAN: {len(runs)} run(s)"
+          + (f"  [task {task}]" if task != "A" else "")
           + ("  [SMOKE — tiny settings, throwaway rlvr-batchtest- repos]" if smoke else ""))
     for i, (rm, df, sd) in enumerate(runs, 1):
         print(f"  {i}. {rm}/{df} seed{sd}")
@@ -507,7 +520,7 @@ def run_batch(runs, out_root="/kaggle/working/runs", max_hours=11.0, smoke=False
             if smoke:
                 result = _smoke_run_cell(reward_mode, difficulty, seed, out_root)
             else:
-                result = run_cell(reward_mode, difficulty, seed, out_root=out_root)
+                result = run_cell(reward_mode, difficulty, seed, out_root=out_root, task=task)
         except Exception as exc:
             # run_cell already catches NaN/OOM internally; this catches ANYTHING else so
             # one bad run can never kill the queue.
@@ -530,7 +543,7 @@ def run_batch(runs, out_root="/kaggle/working/runs", max_hours=11.0, smoke=False
 
     # Summary — ALWAYS reached, even if individual runs failed.
     try:
-        completion = check_completion(ALL_CONDITIONS, ALL_SEEDS, out_root=out_root)
+        completion = check_completion(ALL_CONDITIONS, ALL_SEEDS, out_root=out_root, task=task)
         expected_all, done_all = completion["expected"], completion["done"]
     except Exception as exc:
         print(f"(could not query Hub completion: {type(exc).__name__}: {exc})")

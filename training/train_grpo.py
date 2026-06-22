@@ -23,8 +23,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import study_config as cfg
-from data_generation.generate import build_all
-from graders.grader import grade, grade_loose
+from training.tasks import task_spec
 
 
 class TrainableParamError(RuntimeError):
@@ -55,16 +54,19 @@ def _completion_text(completion):
     return str(completion)
 
 
-def build_reward_func(reward_mode):
-    """Return a TRL-compatible reward function backed by the real grader.
+def build_reward_func(reward_mode, task="A"):
+    """Return a TRL-compatible reward function backed by the task's real grader.
 
     TRL calls it as ``reward_func(completions=[...], answer=[...], prompts=[...], ...)``
-    with one entry per completion. We never reimplement scoring — strict uses
-    ``graders.grader.grade``; loose uses ``graders.grader.grade_loose``.
+    with one entry per completion. We never reimplement scoring — strict uses the task's
+    ``grade``; loose uses the task's ``grade_loose``. The gold is decoded via the task
+    codec (Task A: identity float; Task B: json.loads of the stored JSON string).
+    task='A' reproduces today's Task-A reward exactly.
     """
     if reward_mode not in ("strict", "loose"):
         raise ValueError(f"reward_mode must be 'strict' or 'loose', got {reward_mode!r}")
-    scorer = grade if reward_mode == "strict" else grade_loose
+    spec = task_spec(task)
+    scorer = spec.grade if reward_mode == "strict" else spec.grade_loose
 
     def reward_func(completions, **kwargs):
         answers = kwargs.get("answer")
@@ -77,25 +79,29 @@ def build_reward_func(reward_mode):
                 f"completions ({len(completions)}) and answer ({len(answers)}) are misaligned "
                 f"— TRL must pass exactly one gold per completion."
             )
-        return [float(scorer(_completion_text(c), g)) for c, g in zip(completions, answers)]
+        return [float(scorer(_completion_text(c), spec.decode_gold(g)))
+                for c, g in zip(completions, answers)]
 
-    reward_func.__name__ = f"reward_{reward_mode}"
+    reward_func.__name__ = f"reward_{reward_mode}" if task == "A" else f"reward_{task}_{reward_mode}"
     return reward_func
 
 
-def to_grpo_dataset(items):
+def to_grpo_dataset(items, task="A"):
     """Map our items to TRL's conversational format (rows of message-list + answer).
 
     TRL applies the chat template internally, so we pass the message list (not a
-    rendered string). The frozen SYSTEM_PROMPT is included on every row.
+    rendered string). The task's system prompt is on every row, and the gold is stored
+    via the task codec (Task A: float as-is; Task B: gold dict -> JSON string).
+    task='A' produces exactly today's rows.
     """
+    spec = task_spec(task)
     return [
         {
             "prompt": [
-                {"role": "system", "content": cfg.SYSTEM_PROMPT},
+                {"role": "system", "content": spec.system_prompt},
                 {"role": "user", "content": item["prompt"]},
             ],
-            "answer": item["answer"],
+            "answer": spec.encode_gold(item["answer"]),
         }
         for item in items
     ]
@@ -206,7 +212,7 @@ def make_peft_model(model_id=None, **lora_overrides):
     return model
 
 
-def train_one(reward_mode, difficulty, seed, out_dir, save_repo=None, **hp):
+def train_one(reward_mode, difficulty, seed, out_dir, save_repo=None, task="A", **hp):
     """One reusable GRPO+LoRA run (the 12 real runs call this with the 2x2 x 3 seeds).
 
     difficulty: "easy" -> easy-only; "easy_hard" -> half easy + half hard (the
@@ -219,6 +225,7 @@ def train_one(reward_mode, difficulty, seed, out_dir, save_repo=None, **hp):
 
     if difficulty not in ("easy", "easy_hard"):
         raise ValueError(f"difficulty must be 'easy' or 'easy_hard', got {difficulty!r}")
+    spec = task_spec(task)  # task='A' resolves to exactly today's Task-A wiring
 
     # Resolve hyperparameters: cfg defaults, overridden by **hp (e.g. cfg.SMOKE).
     num_generations = hp.get("num_generations", cfg.NUM_GENERATIONS)
@@ -238,18 +245,20 @@ def train_one(reward_mode, difficulty, seed, out_dir, save_repo=None, **hp):
 
     print("=" * 72)
     print(f"train_one  reward={reward_mode}  difficulty={difficulty}  seed={seed}")
+    if task != "A":
+        print(f"  task={task}")
     print("=" * 72)
     _seed_everything(seed)
     print(f"seeded everything with {seed}")
 
     # Data — same builder/seed as the rest of the study.
-    data = build_all(seed, cfg.N_EASY, cfg.N_HARD, cfg.N_OOD_EASY, cfg.N_OOD_HARD)
+    data = spec.build_all(seed, cfg.N_EASY, cfg.N_HARD, cfg.N_OOD_EASY, cfg.N_OOD_HARD)
     if difficulty == "easy":
         items = data["train_easy"][:n_examples]
     else:
         half = n_examples // 2
         items = data["train_easy"][:half] + data["train_hard"][:half]
-    train_dataset = Dataset.from_list(to_grpo_dataset(items))
+    train_dataset = Dataset.from_list(to_grpo_dataset(items, task))
     print(f"training on {len(train_dataset)} items ({difficulty})")
 
     model = make_peft_model()
@@ -257,7 +266,7 @@ def train_one(reward_mode, difficulty, seed, out_dir, save_repo=None, **hp):
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    reward_func = build_reward_func(reward_mode)
+    reward_func = build_reward_func(reward_mode, task)
 
     # GRPOConfig arg names verified against the installed TRL (1.6.0): `max_prompt_length`
     # was REMOVED from GRPOConfig in TRL 1.x; `max_completion_length` and `beta` (KL) still

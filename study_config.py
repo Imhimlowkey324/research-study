@@ -10,6 +10,24 @@ MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 # the file. Do not retype or paraphrase.
 SYSTEM_PROMPT = "You solve a short math problem. Compute ownership% = raise / (pre_money + raise) * 100. Show at most 2 short steps, then STOP and write exactly: 'The answer is X' where X is the number rounded to 2 decimals. Example: 'Raise 5M, pre-money 20M. Post-money = 25M. 5/25*100 = 20. The answer is 20.'"
 
+# Worked-example Task B system prompt (extraction -> JSON). Mirrors Task A's terse
+# style; pre-registered in TASKB_PREREG.md (a test asserts they match). The frozen
+# Task-A SYSTEM_PROMPT above is NOT touched.
+SYSTEM_PROMPT_B = (
+    'You extract structured data from a short text. Output ONLY a JSON object with keys '
+    'company, round, raise, valuation, founders -- no prose and no code fence. raise is the '
+    'amount raised in dollars and valuation is the pre-money valuation in dollars, both as '
+    'plain integers; founders is a list of names. '
+    'Example: text "Acme raised $5M in its Series A at a $20M pre-money valuation, founded by '
+    'Jo Lee." -> {"company": "Acme", "round": "Series A", "raise": 5000000, "valuation": '
+    '20000000, "founders": ["Jo Lee"]}'
+)
+
+# Task-B-only override, to be set by the Task B pilot (None -> use the shared frozen
+# MAX_COMPLETION_LENGTH). JSON output may want more room than a single number. NOT wired
+# yet and NOT a change to any Task-A value.
+MAX_COMPLETION_LENGTH_B = None
+
 # Generation budget.
 MAX_NEW_TOKENS = 768
 
@@ -80,9 +98,13 @@ SMOKE = {
 
 
 def snapshot() -> dict:
-    """All frozen config constants, for printing on screen and saving with results."""
+    """All frozen Task-A config constants, for printing on screen and saving with results.
+
+    Task-B-specific constants (suffixed ``_B``, e.g. SYSTEM_PROMPT_B) are excluded so the
+    Task-A config snapshot stays byte-identical now that Task B constants also exist.
+    """
     return {
         name: value
         for name, value in globals().items()
-        if name.isupper() and not name.startswith("_")
+        if name.isupper() and not name.startswith("_") and not name.endswith("_B")
     }
