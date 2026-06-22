@@ -12,10 +12,14 @@ from training.run_real import (
     _classify_error,
     _fmt_hm,
     _parse_reward_line,
+    batch_repo_id,
+    batch_status_label,
     build_results,
     missing_runs,
     repo_id,
     reward_trended_up,
+    should_stop,
+    summarize_batch,
 )
 
 CONDITIONS = [("strict", "easy"), ("strict", "easy_hard"),
@@ -133,3 +137,60 @@ def test_classify_error():
     assert _classify_error(NaNLossError("loss became nan")) == "nan"
     assert _classify_error(RuntimeError("CUDA out of memory. Tried to allocate ...")) == "oom"
     assert _classify_error(ValueError("misaligned columns")) == "error"
+
+
+# --------------------------------------------------------------------------- #
+# Batch wrapper: time-budget guard, repo-namespace selection, summary assembly  #
+# --------------------------------------------------------------------------- #
+def test_should_stop_false_with_time_left():
+    assert should_stop(0.0, 2.6, 11.0) is False
+    assert should_stop(5.0, 2.6, 11.0) is False     # 7.6 < 11
+
+
+def test_should_stop_true_when_next_run_would_exceed():
+    assert should_stop(9.0, 2.6, 11.0) is True      # 11.6 > 11
+
+
+def test_should_stop_boundary_exact_limit_does_not_stop():
+    assert should_stop(8.0, 3.0, 11.0) is False     # exactly 11.0 -> does not exceed
+    assert should_stop(8.5, 3.0, 11.0) is True      # 11.5 > 11.0
+
+
+def test_batch_repo_id_real_vs_smoke_namespace():
+    # smoke=False -> the real rlvr-taskA- repo (identical to repo_id)
+    assert batch_repo_id("strict", "easy", 0, "alice", smoke=False) == \
+        "alice/rlvr-taskA-strict-easy-seed0"
+    assert batch_repo_id("loose", "easy_hard", 2, "bob", smoke=False) == \
+        repo_id("loose", "easy_hard", 2, "bob")
+    # smoke=True -> a SEPARATE throwaway rlvr-batchtest- namespace
+    assert batch_repo_id("strict", "easy", 0, "alice", smoke=True) == \
+        "alice/rlvr-batchtest-strict-easy-seed0"
+
+
+def test_batch_status_label():
+    assert batch_status_label({"status": "ok"}) == "done"
+    assert batch_status_label({"status": "skipped", "skipped": True}) == "skipped (already existed)"
+    assert batch_status_label({"status": "nan"}) == "failed (nan)"
+    assert batch_status_label({"status": "oom"}) == "failed (oom)"
+
+
+def test_summarize_batch_labels_and_missing():
+    runs = [("strict", "easy", 0), ("strict", "easy", 1),
+            ("strict", "easy", 2), ("loose", "easy", 0)]
+    # outcomes for the first 3 started runs; the 4th never started (time budget)
+    results = [
+        {"status": "ok"},                          # done
+        {"status": "skipped", "skipped": True},    # skipped (already existed)
+        {"status": "oom"},                         # failed (oom)
+    ]
+    expected = [repo_id(r, d, s, "u") for (r, d) in CONDITIONS for s in SEEDS]  # the 12 real repos
+    done = expected[:5]
+    summary = summarize_batch(runs, results, expected, done)
+
+    labels = dict(summary["labels"])
+    assert labels[("strict", "easy", 0)] == "done"
+    assert labels[("strict", "easy", 1)] == "skipped (already existed)"
+    assert labels[("strict", "easy", 2)] == "failed (oom)"
+    assert labels[("loose", "easy", 0)] == "not started"
+    assert summary["missing"] == set(expected[5:])
+    assert len(summary["missing"]) == 7

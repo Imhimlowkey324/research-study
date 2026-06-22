@@ -357,3 +357,195 @@ def run_calibration(out_root="/kaggle/working/runs"):
     print("  → KEEP as run #1 of 12 if: trended up AND status ok AND runtime workable.")
     print("  → Otherwise: adjust config ONCE, re-freeze, discard this run, re-run all 12 fresh.")
     return results
+
+
+# --------------------------------------------------------------------------- #
+# Batch wrapper — run several real runs back-to-back, unattended, in one        #
+# Kaggle session. Adds NOTHING to train_one / run_cell; only orchestrates them. #
+# --------------------------------------------------------------------------- #
+ALL_CONDITIONS = [("strict", "easy"), ("strict", "easy_hard"),
+                  ("loose", "easy"), ("loose", "easy_hard")]
+ALL_SEEDS = [0, 1, 2]
+EST_HOURS_PER_RUN = 2.6           # real-run estimate for the time-budget guard
+EST_HOURS_PER_RUN_SMOKE = 0.05    # smoke-run estimate
+
+
+def should_stop(elapsed_hours, planned_hours, max_hours):
+    """Pure: stop before starting a run if it would push past the session ceiling."""
+    return (elapsed_hours + planned_hours) > max_hours
+
+
+def batch_repo_id(reward_mode, difficulty, seed, user, smoke=False):
+    """Per-run repo name. smoke=True uses a SEPARATE throwaway 'rlvr-batchtest-'
+    namespace so it can never touch or be confused with the real 'rlvr-taskA-' repos."""
+    if smoke:
+        return f"{user}/rlvr-batchtest-{reward_mode}-{difficulty}-seed{seed}"
+    return repo_id(reward_mode, difficulty, seed, user)
+
+
+def batch_status_label(result):
+    """Pure: one run's result dict -> a summary label."""
+    status = result.get("status")
+    if result.get("skipped") or status == "skipped":
+        return "skipped (already existed)"
+    if status == "ok":
+        return "done"
+    return f"failed ({status})"
+
+
+def summarize_batch(runs, results, expected_repos, done_repos):
+    """Pure: per-run labels (results align to the first len(results) runs; the rest
+    are 'not started') plus the still-missing set across all expected runs."""
+    labels = []
+    for i, run in enumerate(runs):
+        if i < len(results):
+            labels.append((tuple(run), batch_status_label(results[i])))
+        else:
+            labels.append((tuple(run), "not started"))
+    return {"labels": labels, "missing": missing_runs(done_repos, expected_repos)}
+
+
+def _smoke_run_cell(reward_mode, difficulty, seed, out_root):
+    """Smoke twin of run_cell: tiny cfg.SMOKE settings + a throwaway rlvr-batchtest-
+    repo, so a whole batch finishes in minutes and never touches the 12 real repos.
+
+    It can't reuse run_cell itself: run_cell is frozen to the full config and asserts
+    the 256-item fixed count, which SMOKE deliberately violates. It reuses every other
+    helper, so it exercises the identical save / idempotency / status machinery.
+    """
+    import torch
+    from huggingface_hub import repo_exists, whoami
+
+    token = _hf_token()
+    if not token:
+        raise RuntimeError("An HF token is REQUIRED even for the smoke batch. Set HF_TOKEN.")
+    user = whoami(token=token)["name"]
+    repo = batch_repo_id(reward_mode, difficulty, seed, user, smoke=True)
+    local_dir = Path(out_root) / f"smoke-{reward_mode}-{difficulty}-seed{seed}"
+    local_dir.mkdir(parents=True, exist_ok=True)
+
+    if repo_exists(repo, token=token):
+        print(f"already complete — skipping {repo}")
+        existing = _try_load_repo_results(repo, token)
+        if existing is not None:
+            existing["skipped"] = True
+            return existing
+        return {"reward_mode": reward_mode, "difficulty": difficulty, "seed": seed,
+                "status": "skipped", "skipped": True, "runtime_sec": 0.0, "peak_mem_gb": 0.0,
+                "reward_history": [], "reward_trend": reward_trended_up([]),
+                "adapter_repo": repo, "repo": repo, "smoke": True}
+
+    commit = _git_short_sha()
+    start = time.time()
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+    reward_jsonl = local_dir / "reward_history.jsonl"
+    if reward_jsonl.exists():
+        reward_jsonl.unlink()
+
+    status, error_msg, result = "ok", None, None
+    with _RewardTee(reward_jsonl) as tee:
+        try:
+            result = train_one(reward_mode, difficulty, seed,
+                               str(local_dir / "adapter"), save_repo=repo, **cfg.SMOKE)
+        except Exception as exc:
+            status = _classify_error(exc)
+            error_msg = f"{type(exc).__name__}: {exc}"
+    history = (result or {}).get("reward_history") or tee.history
+    runtime_sec = time.time() - start
+    peak_mem_gb = (torch.cuda.max_memory_allocated() / 1e9) if torch.cuda.is_available() else 0.0
+
+    trend = reward_trended_up(history)
+    adapter_repo = (result or {}).get("adapter_repo") or (repo if status == "ok" else None)
+    results = build_results(reward_mode, difficulty, seed, status, commit, runtime_sec,
+                            peak_mem_gb, history, trend, adapter_repo, cfg.snapshot())
+    results["error"] = error_msg
+    results["repo"] = repo
+    results["smoke"] = True
+    (local_dir / "results.json").write_text(
+        json.dumps(results, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+    if status == "ok":
+        _upload_results(repo, local_dir / "results.json", token)
+    _print_readout(results, repo)
+    return results
+
+
+def run_batch(runs, out_root="/kaggle/working/runs", max_hours=11.0, smoke=False):
+    """Run several runs back-to-back, unattended, in one session.
+
+    runs: list of (reward_mode, difficulty, seed). Per-run failures are isolated (the
+    queue always continues and always prints a summary). GPU memory is cleared between
+    runs. A time-budget guard stops cleanly before the session ceiling. smoke=True uses
+    tiny settings + a separate rlvr-batchtest- repo namespace, leaving the real-run path
+    completely untouched. Idempotent skip is inherited from run_cell / _smoke_run_cell.
+    """
+    import gc
+
+    import torch
+
+    runs = [tuple(r) for r in runs]
+    per_run_est = EST_HOURS_PER_RUN_SMOKE if smoke else EST_HOURS_PER_RUN
+
+    print("=" * 72)
+    print(f"BATCH PLAN: {len(runs)} run(s)"
+          + ("  [SMOKE — tiny settings, throwaway rlvr-batchtest- repos]" if smoke else ""))
+    for i, (rm, df, sd) in enumerate(runs, 1):
+        print(f"  {i}. {rm}/{df} seed{sd}")
+    print(f"  max_hours={max_hours}  per-run estimate={per_run_est}h")
+    print("=" * 72)
+
+    batch_start = time.time()
+    results = []
+    for i, (reward_mode, difficulty, seed) in enumerate(runs, 1):
+        elapsed_h = (time.time() - batch_start) / 3600.0
+        if should_stop(elapsed_h, per_run_est, max_hours):
+            print(f"stopping early to stay under the session limit; not started: {runs[i - 1:]}")
+            break
+
+        print(f"\n--- run {i}/{len(runs)}: {reward_mode}/{difficulty} seed{seed} ---")
+        try:
+            if smoke:
+                result = _smoke_run_cell(reward_mode, difficulty, seed, out_root)
+            else:
+                result = run_cell(reward_mode, difficulty, seed, out_root=out_root)
+        except Exception as exc:
+            # run_cell already catches NaN/OOM internally; this catches ANYTHING else so
+            # one bad run can never kill the queue.
+            result = {"reward_mode": reward_mode, "difficulty": difficulty, "seed": seed,
+                      "status": _classify_error(exc), "error": f"{type(exc).__name__}: {exc}",
+                      "runtime_sec": 0.0, "peak_mem_gb": 0.0, "repo": None}
+            print(f"  run {i} raised unexpectedly — recorded and continuing: {result['error']}")
+        results.append(result)
+
+        # GPU cleanup between runs (load-bearing): hand memory back so the next model
+        # loads from ~baseline instead of piling up and OOMing overnight.
+        del result
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+
+    total_runtime = time.time() - batch_start
+
+    # Summary — ALWAYS reached, even if individual runs failed.
+    try:
+        completion = check_completion(ALL_CONDITIONS, ALL_SEEDS, out_root=out_root)
+        expected_all, done_all = completion["expected"], completion["done"]
+    except Exception as exc:
+        print(f"(could not query Hub completion: {type(exc).__name__}: {exc})")
+        expected_all, done_all = [], []
+    summary = summarize_batch(runs, results, expected_all, done_all)
+
+    print("\n" + "=" * 72)
+    print(f"BATCH SUMMARY  ({len(results)}/{len(runs)} started, total {_fmt_hm(total_runtime)})")
+    for run, label in summary["labels"]:
+        rm, df, sd = run
+        print(f"  {rm}/{df} seed{sd} → {label}")
+    if smoke:
+        print("\n[smoke] real-run repos untouched; the 12 real runs' still-missing set is unchanged.")
+    else:
+        miss = sorted(summary["missing"])
+        print(f"\nstill missing across all 12 real runs ({len(miss)}): {miss}")
+    print("=" * 72)
+    return results
