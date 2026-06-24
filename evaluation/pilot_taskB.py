@@ -172,6 +172,16 @@ def diagnose_hard(records):
             if mv is not None and round(mv) == round(dv):
                 raise_grabbed += 1
 
+    val_miss = [r for r in records if r["field_strict"]["valuation"] == 0.0]
+    val_grabbed = 0
+    for r in val_miss:
+        obj = r["extracted"]
+        vd = parse_number((r.get("info") or {}).get("val_distractor"))
+        if obj is not None and vd is not None:
+            mv = parse_number(obj.get("valuation"))
+            if mv is not None and round(mv) == round(vd):
+                val_grabbed += 1
+
     found_miss = [r for r in records if r["field_strict"]["founders"] == 0.0]
     found_inc_adv = 0
     for r in found_miss:
@@ -193,6 +203,8 @@ def diagnose_hard(records):
     return {
         "raise": {"misses": len(raise_miss), "grabbed_distractor": raise_grabbed,
                   "grabbed_distractor_pct": pct(raise_grabbed, len(raise_miss))},
+        "valuation": {"misses": len(val_miss), "grabbed_post_money": val_grabbed,
+                      "grabbed_post_money_pct": pct(val_grabbed, len(val_miss))},
         "founders": {"misses": len(found_miss), "included_advisor": found_inc_adv,
                      "included_advisor_pct": pct(found_inc_adv, len(found_miss))},
         "round": {"misses": len(round_miss),
@@ -296,6 +308,9 @@ def format_report(bands, max_new_tokens, seed, n_per_band):
     rr = dh["raise"]
     L.append(f"  raise misses {rr['misses']}: model grabbed the prior-round distractor AMOUNT in "
              f"{rr['grabbed_distractor']} ({rr['grabbed_distractor_pct']}%)")
+    vv = dh["valuation"]
+    L.append(f"  valuation misses {vv['misses']}: model grabbed the POST-MONEY distractor in "
+             f"{vv['grabbed_post_money']} ({vv['grabbed_post_money_pct']}%)")
     ff = dh["founders"]
     L.append(f"  founders misses {ff['misses']}: model included the ADVISOR (a non-founder) in "
              f"{ff['included_advisor']} ({ff['included_advisor_pct']}%)")
@@ -438,17 +453,19 @@ def selftest():
 
     # (i) diagnose_hard attributes misses to distractor-grabs + splits round abbreviation
     gh = {"company": "X", "round": "Seed", "raise": 25000000, "valuation": 75000000, "founders": ["David Park"]}
-    info_h = {"distractors": ["$2M", "Zoe Frost"], "prior_round": "Series D"}
+    info_h = {"distractors": ["$2M", "Zoe Frost"], "prior_round": "Series D", "val_distractor": "$80M"}
     ga = {**gh, "round": "Series A"}
-    info_a = {"distractors": ["$2M", "Zoe Frost"], "prior_round": "Seed"}
+    info_a = {"distractors": ["$2M", "Zoe Frost"], "prior_round": "Seed", "val_distractor": "$80M"}
     drecs = [
         score_item(spec, json.dumps({**gh, "raise": 2000000}), gh, 40, CAP, info_h),               # grabbed distractor amount
+        score_item(spec, json.dumps({**gh, "valuation": 80000000}), gh, 40, CAP, info_h),          # grabbed post-money valuation
         score_item(spec, json.dumps({**gh, "founders": ["David Park", "Zoe Frost"]}), gh, 40, CAP, info_h),  # included advisor
         score_item(spec, json.dumps({**gh, "round": "Series D"}), gh, 40, CAP, info_h),            # grabbed prior round
         score_item(spec, json.dumps({**ga, "round": "A"}), ga, 40, CAP, info_a),                   # abbreviation only
     ]
     d = diagnose_hard(drecs)
     assert d["raise"]["grabbed_distractor"] == 1 and d["raise"]["misses"] == 1
+    assert d["valuation"]["grabbed_post_money"] == 1 and d["valuation"]["misses"] == 1
     assert d["founders"]["included_advisor"] == 1 and d["founders"]["misses"] == 1
     assert d["round"]["abbreviation"] == 1 and d["round"]["wrong_round"] == 1
     assert d["round"]["wrong_round_grabbed_prior"] == 1

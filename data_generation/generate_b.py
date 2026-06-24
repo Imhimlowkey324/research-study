@@ -96,40 +96,45 @@ EASY_OOD_TEMPLATES = [
 # fails to resolve). Disambiguation is purely TEMPORAL (earlier/prior/previous vs current/
 # latest/more recently) -- no magnitude claim that could be false. WHICH distractor bites and
 # WHERE varies across templates, so there is no fixed positional tell to exploit. Train and
-# OOD skeletons stay disjoint. (Easy templates + _fill_hard are untouched.)
+# OOD skeletons stay disjoint. Turn 3 (one dial) ADDS only a VALUATION distractor -- a competing
+# valuation figure {val_distractor} (> pre-money, varied magnitude) -- to bite the `valuation`
+# field. The gold stays EXPLICITLY cued as "{valuation} pre-money valuation" in every template,
+# while {val_distractor} reads as a different post-round/headline valuation, so a careful reader
+# always tells which is pre-money. The raise/advisor/prior_round distractors + easy are unchanged.
 HARD_TRAIN_TEMPLATES = [
     "{company} raised {distractor_raise} in an earlier {prior_round} round; more recently, its "
-    "{round} round brought in {raise} at a {valuation} pre-money valuation. It was founded by "
-    "{founders}, and {advisor} advises the board.",
-    "Founded by {founders} -- with {advisor} serving as an advisor -- {company} closed its {round} "
-    "round at {raise}, on a {valuation} pre-money valuation, after the {distractor_raise} of its "
-    "previous {prior_round} round.",
+    "{round} round brought in {raise} at a {valuation} pre-money valuation, leaving it valued at "
+    "{val_distractor} after the round. It was founded by {founders}, and {advisor} advises the board.",
+    "Founded by {founders} -- with {advisor} serving as an advisor -- {company}, now valued at "
+    "{val_distractor}, closed its {round} round at {raise}, on a {valuation} pre-money valuation, "
+    "after the {distractor_raise} of its previous {prior_round} round.",
     "After a {prior_round} round that had brought in {distractor_raise}, {company} pressed ahead: "
-    "its {round} round raised {raise} at a {valuation} pre-money valuation. The founders are "
-    "{founders}; {advisor} is an advisor.",
-    "{company} had raised {distractor_raise} back in its {prior_round} days. Advised by {advisor} "
-    "and founded by {founders}, it went on to land {raise} in its {round} round, at a {valuation} "
-    "pre-money valuation.",
-    "{company}'s {round} round came in at {raise}, with a {valuation} pre-money valuation, following "
-    "the {distractor_raise} it raised in its {prior_round} round. The team: founders {founders}, "
-    "plus advisor {advisor}.",
+    "its {round} round raised {raise} at a {valuation} pre-money valuation, for a post-round "
+    "valuation of {val_distractor}. The founders are {founders}; {advisor} is an advisor.",
+    "{company} had raised {distractor_raise} back in its {prior_round} days and now carries a "
+    "headline valuation of {val_distractor}. Advised by {advisor} and founded by {founders}, it "
+    "went on to land {raise} in its {round} round, at a {valuation} pre-money valuation.",
+    "{company}'s {round} round came in at {raise}, with a {valuation} pre-money valuation and a "
+    "valuation of {val_distractor} once the round closed, following the {distractor_raise} it "
+    "raised in its {prior_round} round. The team: founders {founders}, plus advisor {advisor}.",
 ]
 HARD_OOD_TEMPLATES = [
     "{company} secured {distractor_raise} in a {prior_round} round some time ago; its current "
-    "{round} round, however, came to {raise} at a {valuation} pre-money valuation. The company was "
-    "founded by {founders}, with {advisor} on its advisory board.",
-    "Built by {founders} and counseled by advisor {advisor}, {company} priced its {round} round at "
-    "{raise} with a {valuation} pre-money valuation, after the {distractor_raise} from its "
-    "{prior_round} round.",
+    "{round} round, however, came to {raise} at a {valuation} pre-money valuation, a round that "
+    "valued it at {val_distractor}. The company was founded by {founders}, with {advisor} on its "
+    "advisory board.",
+    "Built by {founders} and counseled by advisor {advisor}, {company} -- valued at {val_distractor} "
+    "post-round -- priced its {round} round at {raise} with a {valuation} pre-money valuation, after "
+    "the {distractor_raise} from its {prior_round} round.",
     "Its {prior_round} round had drawn {distractor_raise}, but {company} was just getting started: "
-    "the {round} round pulled {raise} at a {valuation} pre-money valuation. Founders {founders} ran "
-    "the company; {advisor} advised it.",
-    "Long ago {company} took in {distractor_raise} during a {prior_round} round. Guided by advisor "
-    "{advisor} and started by {founders}, it later secured {raise} in its {round} round, at a "
-    "{valuation} pre-money valuation.",
-    "The {round} round at {company} landed {raise} on a {valuation} pre-money valuation, compared "
-    "with the {distractor_raise} of its {prior_round} chapter. Behind it: founders {founders}, "
-    "alongside advisor {advisor}.",
+    "the {round} round pulled {raise} at a {valuation} pre-money valuation, settling its worth at "
+    "{val_distractor} afterward. Founders {founders} ran the company; {advisor} advised it.",
+    "Long ago {company} took in {distractor_raise} during a {prior_round} round, and today it is "
+    "valued at {val_distractor}. Guided by advisor {advisor} and started by {founders}, it later "
+    "secured {raise} in its {round} round, at a {valuation} pre-money valuation.",
+    "The {round} round at {company} landed {raise} on a {valuation} pre-money valuation -- about "
+    "{val_distractor} once closed -- compared with the {distractor_raise} of its {prior_round} "
+    "chapter. Behind it: founders {founders}, alongside advisor {advisor}.",
 ]
 
 
@@ -255,8 +260,17 @@ def _fill_hard(record, rng):
         "advisor": advisor,
         "prior_round": prior_round,
     }
+    # Valuation distractor (turn-3 dial): a competing valuation figure LARGER than the pre-money
+    # gold so a careless reader grabs it. Magnitude VARIES -- the delta over pre-money is drawn
+    # independently from RAISE_AMOUNTS, so val_post is NOT always pre+raise (no fixed arithmetic
+    # tell; anti-tell). Drawn AFTER the existing fields so their renders are unchanged for an item.
+    val_post = record["valuation"] + rng.choice(RAISE_AMOUNTS)
+    while val_post in (record["raise"], record["valuation"], distractor):
+        val_post = record["valuation"] + rng.choice(RAISE_AMOUNTS)
+    fill["val_distractor"] = _render_money(val_post, rng, mixed=True)
     info = {"raise_str": fill["raise"], "valuation_str": fill["valuation"],
-            "distractors": [fill["distractor_raise"], advisor], "prior_round": prior_round}
+            "distractors": [fill["distractor_raise"], advisor], "prior_round": prior_round,
+            "val_distractor": fill["val_distractor"]}
     return fill, info
 
 
