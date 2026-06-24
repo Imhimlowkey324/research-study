@@ -51,6 +51,8 @@ from training.tasks import task_spec
 from data_generation.generate_b import build_all_b
 from graders.grader_b import (
     EXPECTED_KEYS,
+    _as_founder_list,
+    _canon_round,
     _founders_eq_strict,
     _founders_loose,
     _name_loose,
@@ -58,6 +60,8 @@ from graders.grader_b import (
     _num_loose,
     _round_loose,
     _str_eq_strict,
+    normalize_str,
+    parse_number,
 )
 
 # Pilot knobs (NOT frozen — calibration only; change ONE at a time when iterating).
@@ -121,7 +125,7 @@ def classify_output(raw_output, obj, n_new, max_new_tokens):
     return "no_json_at_all"                   # never emitted a JSON object (real miss)
 
 
-def score_item(spec, raw_output, gold, n_new, max_new_tokens):
+def score_item(spec, raw_output, gold, n_new, max_new_tokens, info=None):
     obj = spec.extract(raw_output)           # grader_b.extract_json
     strict = spec.grade(raw_output, gold)
     return {
@@ -129,6 +133,7 @@ def score_item(spec, raw_output, gold, n_new, max_new_tokens):
         "raw_output": raw_output,
         "extracted": obj,
         "n_new": n_new,
+        "info": info,                        # the item's distractors/prior_round (for bite attribution)
         "format_valid": spec.format_valid(raw_output),
         "strict": strict,
         "loose": spec.grade_loose(raw_output, gold),
@@ -136,6 +141,64 @@ def score_item(spec, raw_output, gold, n_new, max_new_tokens):
         "field_strict": per_field_strict(obj, gold),
         "field_loose": per_field_loose(obj, gold),
         "rig": classify_output(raw_output, obj, n_new, max_new_tokens),
+    }
+
+
+def diagnose_hard(records):
+    """Attribute hard-band misses — the PROOF the non-negotiable held: a miss should be the
+    model GRABBING a distractor (disambiguation failure), not the prose being ambiguous.
+    Also splits `round` misses into abbreviation ("A" vs "Series A") vs a genuinely wrong round.
+    """
+    def info(r):
+        return r.get("info") or {}
+
+    def dist_amount(r):
+        ds = info(r).get("distractors") or []
+        return parse_number(ds[0]) if ds else None
+
+    def advisor(r):
+        ds = info(r).get("distractors") or []
+        return ds[1] if len(ds) > 1 else None
+
+    def pct(a, b):
+        return round(100.0 * a / b, 1) if b else None
+
+    raise_miss = [r for r in records if r["field_strict"]["raise"] == 0.0]
+    raise_grabbed = 0
+    for r in raise_miss:
+        obj, dv = r["extracted"], dist_amount(r)
+        if obj is not None and dv is not None:
+            mv = parse_number(obj.get("raise"))
+            if mv is not None and round(mv) == round(dv):
+                raise_grabbed += 1
+
+    found_miss = [r for r in records if r["field_strict"]["founders"] == 0.0]
+    found_inc_adv = 0
+    for r in found_miss:
+        obj, adv = r["extracted"], advisor(r)
+        if obj is not None and adv:
+            mf = {normalize_str(x) for x in _as_founder_list(obj.get("founders"))}
+            if normalize_str(adv) in mf:
+                found_inc_adv += 1
+
+    round_miss = [r for r in records if r["field_strict"]["round"] == 0.0]
+    abbrev = [r for r in round_miss if r["field_loose"]["round"] == 1.0]  # right round, wrong form
+    wrong = [r for r in round_miss if r["field_loose"]["round"] == 0.0]   # genuinely wrong round
+    grabbed_prior = 0
+    for r in wrong:
+        obj, pr = r["extracted"], info(r).get("prior_round")
+        if obj is not None and pr and _canon_round(obj.get("round") or "") == _canon_round(pr):
+            grabbed_prior += 1
+
+    return {
+        "raise": {"misses": len(raise_miss), "grabbed_distractor": raise_grabbed,
+                  "grabbed_distractor_pct": pct(raise_grabbed, len(raise_miss))},
+        "founders": {"misses": len(found_miss), "included_advisor": found_inc_adv,
+                     "included_advisor_pct": pct(found_inc_adv, len(found_miss))},
+        "round": {"misses": len(round_miss),
+                  "abbreviation": len(abbrev), "abbreviation_pct": pct(len(abbrev), len(round_miss)),
+                  "wrong_round": len(wrong), "wrong_round_pct": pct(len(wrong), len(round_miss)),
+                  "wrong_round_grabbed_prior": grabbed_prior},
     }
 
 
@@ -227,8 +290,26 @@ def format_report(bands, max_new_tokens, seed, n_per_band):
         L.append(f"  {b:<5} all5 {a['all5_pct']:5.1f}%   loose {a['loose_pct']:5.1f}   "
                  + "loose-by-field " + " ".join(f"{f[:3]}={fl[f]:.0f}" for f in FIELDS))
 
-    # 4) example transcripts per band.
-    L.append("\n[4] EXAMPLE TRANSCRIPTS (prompt / gold / raw output)")
+    # 5) HARD distractor-bite proof — misses should be GRABS, not ambiguity.
+    dh = diagnose_hard(bands["hard"])
+    L.append("\n[5] HARD DISTRACTOR-BITE (proof misses are disambiguation-failures, not ambiguous prose)")
+    rr = dh["raise"]
+    L.append(f"  raise misses {rr['misses']}: model grabbed the prior-round distractor AMOUNT in "
+             f"{rr['grabbed_distractor']} ({rr['grabbed_distractor_pct']}%)")
+    ff = dh["founders"]
+    L.append(f"  founders misses {ff['misses']}: model included the ADVISOR (a non-founder) in "
+             f"{ff['included_advisor']} ({ff['included_advisor_pct']}%)")
+
+    # 6) round contribution (abbreviation vs genuinely-wrong) — for the separate prompt ruling.
+    rd = dh["round"]
+    L.append("\n[6] ROUND contribution to the hard miss (kept separate for the prompt ruling)")
+    L.append(f"  round misses {rd['misses']}: abbreviation 'A' vs 'Series A' (loose-OK) = "
+             f"{rd['abbreviation']} ({rd['abbreviation_pct']}%) | genuinely-wrong round = "
+             f"{rd['wrong_round']} ({rd['wrong_round_pct']}%), of which grabbed prior_round = "
+             f"{rd['wrong_round_grabbed_prior']}")
+
+    # 7) example transcripts per band.
+    L.append("\n[7] EXAMPLE TRANSCRIPTS (gold / raw output)")
     for b in ("easy", "hard"):
         L.append(f"\n  --- {b} band ---")
         for r in _sample_transcripts(bands[b]):
@@ -239,6 +320,7 @@ def format_report(bands, max_new_tokens, seed, n_per_band):
                      f"fields={ {k:int(v) for k,v in r['field_strict'].items()} }")
             L.append(f"     gold:   {json.dumps(r['gold'], ensure_ascii=False)}")
             L.append(f"     output: {out}")
+    agg["hard_diagnostic"] = dh
     return "\n".join(L), agg
 
 
@@ -269,7 +351,7 @@ def run_pilot(n_per_band=N_PER_BAND, max_new_tokens=CANDIDATE_MAX_NEW_TOKENS,
     for band, items in bands_items.items():
         texts = [_chat_text(tokenizer, it, spec.system_prompt) for it in items]
         gens = _generate(model, tokenizer, texts, gen_kwargs, batch_size)
-        bands[band] = [score_item(spec, text, it["answer"], n_new, max_new_tokens)
+        bands[band] = [score_item(spec, text, it["answer"], n_new, max_new_tokens, it.get("info"))
                        for it, (text, n_new) in zip(items, gens)]
 
     report, agg = format_report(bands, max_new_tokens, seed, n_per_band)
@@ -353,7 +435,24 @@ def selftest():
     a = aggregate_band(recs)
     assert a["n"] == 3 and set(a["field_strict_pct"].keys()) == set(FIELDS)
     assert a["format_valid_pct"] == round(100 * 2 / 3, 1)
-    print("pilot_taskB selftest: PASS (pure cores verified, no GPU)")
+
+    # (i) diagnose_hard attributes misses to distractor-grabs + splits round abbreviation
+    gh = {"company": "X", "round": "Seed", "raise": 25000000, "valuation": 75000000, "founders": ["David Park"]}
+    info_h = {"distractors": ["$2M", "Zoe Frost"], "prior_round": "Series D"}
+    ga = {**gh, "round": "Series A"}
+    info_a = {"distractors": ["$2M", "Zoe Frost"], "prior_round": "Seed"}
+    drecs = [
+        score_item(spec, json.dumps({**gh, "raise": 2000000}), gh, 40, CAP, info_h),               # grabbed distractor amount
+        score_item(spec, json.dumps({**gh, "founders": ["David Park", "Zoe Frost"]}), gh, 40, CAP, info_h),  # included advisor
+        score_item(spec, json.dumps({**gh, "round": "Series D"}), gh, 40, CAP, info_h),            # grabbed prior round
+        score_item(spec, json.dumps({**ga, "round": "A"}), ga, 40, CAP, info_a),                   # abbreviation only
+    ]
+    d = diagnose_hard(drecs)
+    assert d["raise"]["grabbed_distractor"] == 1 and d["raise"]["misses"] == 1
+    assert d["founders"]["included_advisor"] == 1 and d["founders"]["misses"] == 1
+    assert d["round"]["abbreviation"] == 1 and d["round"]["wrong_round"] == 1
+    assert d["round"]["wrong_round_grabbed_prior"] == 1
+    print("pilot_taskB selftest: PASS (pure cores + distractor-bite diagnostic verified, no GPU)")
 
 
 if __name__ == "__main__":

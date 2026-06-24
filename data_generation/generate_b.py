@@ -87,37 +87,49 @@ EASY_OOD_TEMPLATES = [
     "A {round} round at {company} raised {raise} (pre-money valuation: {valuation}). It was "
     "co-founded by {founders}.",
 ]
+# Hard = STRONGER distractors that BITE (Phase-5 re-pilot, one dial = distractor STRENGTH).
+# The prior-round amount ({distractor_raise}) is placed where a careless extractor would grab
+# it -- often BEFORE the current raise, in parallel "raised X" phrasing -- and the {advisor}
+# sits in a founder-adjacent clause. But every item STILL explicitly ties the gold to the
+# current/latest {round} round and to "founded by {founders}", so a careful reader recovers
+# every field unambiguously (disambiguation the model can get wrong, NOT ambiguity the prose
+# fails to resolve). Disambiguation is purely TEMPORAL (earlier/prior/previous vs current/
+# latest/more recently) -- no magnitude claim that could be false. WHICH distractor bites and
+# WHERE varies across templates, so there is no fixed positional tell to exploit. Train and
+# OOD skeletons stay disjoint. (Easy templates + _fill_hard are untouched.)
 HARD_TRAIN_TEMPLATES = [
-    "After a quieter {prior_round} round of {distractor_raise} a couple of years back, {company} "
-    "is back in the headlines. Its new {round} round pulled in {raise}, with investors setting "
-    "the pre-money valuation at {valuation}. The company was founded by {founders}.",
-    "{company}, founded by {founders}, has scaled fast. {advisor}, a well-known industry advisor, "
-    "joined recently. The marquee {round} round closed at {raise} against a {valuation} pre-money "
-    "valuation.",
-    "There has been plenty of buzz around {company}. Founded by {founders}, the firm just wrapped "
-    "its {round} round -- {raise} at a pre-money valuation of {valuation} -- dwarfing the "
-    "{distractor_raise} it raised back in its {prior_round} days. {advisor} advises the board.",
-    "{company} traces its roots to a small team led by {founders}. Following an earlier "
-    "{prior_round} raise of {distractor_raise}, the company's {round} round brought in {raise}, "
-    "and the pre-money valuation was pegged at {valuation}.",
-    "In a crowded market, {company} stood out. Its {round} round landed {raise} at a {valuation} "
-    "pre-money valuation. {advisor} serves as a strategic advisor; the company was founded by "
-    "{founders}.",
+    "{company} raised {distractor_raise} in an earlier {prior_round} round; more recently, its "
+    "{round} round brought in {raise} at a {valuation} pre-money valuation. It was founded by "
+    "{founders}, and {advisor} advises the board.",
+    "Founded by {founders} -- with {advisor} serving as an advisor -- {company} closed its {round} "
+    "round at {raise}, on a {valuation} pre-money valuation, after the {distractor_raise} of its "
+    "previous {prior_round} round.",
+    "After a {prior_round} round that had brought in {distractor_raise}, {company} pressed ahead: "
+    "its {round} round raised {raise} at a {valuation} pre-money valuation. The founders are "
+    "{founders}; {advisor} is an advisor.",
+    "{company} had raised {distractor_raise} back in its {prior_round} days. Advised by {advisor} "
+    "and founded by {founders}, it went on to land {raise} in its {round} round, at a {valuation} "
+    "pre-money valuation.",
+    "{company}'s {round} round came in at {raise}, with a {valuation} pre-money valuation, following "
+    "the {distractor_raise} it raised in its {prior_round} round. The team: founders {founders}, "
+    "plus advisor {advisor}.",
 ]
 HARD_OOD_TEMPLATES = [
-    "Industry watchers noted {company}'s momentum: a {round} round of {raise} at a {valuation} "
-    "pre-money mark, well above the {distractor_raise} from its {prior_round} era. The founding "
-    "team -- {founders} -- built it; {advisor} advises them.",
-    "Long after the {prior_round} days (when it scraped together {distractor_raise}), {company} "
-    "matured. The latest {round} round came to {raise}, with the pre-money valuation negotiated "
-    "to {valuation}. Credit goes to founders {founders}.",
-    "{company} has been one to watch. Backed early by advisor {advisor}, and built by {founders}, "
-    "it closed a {round} round of {raise} at a pre-money valuation of {valuation}.",
-    "Few expected {company} to move so quickly. Its {round} round was sized at {raise} "
-    "({valuation} pre-money), a leap from the {distractor_raise} of the {prior_round} chapter. "
-    "The founders: {founders}.",
-    "When {company} announced its {round} round -- {raise}, pre-money valuation {valuation} -- the "
-    "team behind it ({founders}) drew praise, as did longtime advisor {advisor}.",
+    "{company} secured {distractor_raise} in a {prior_round} round some time ago; its current "
+    "{round} round, however, came to {raise} at a {valuation} pre-money valuation. The company was "
+    "founded by {founders}, with {advisor} on its advisory board.",
+    "Built by {founders} and counseled by advisor {advisor}, {company} priced its {round} round at "
+    "{raise} with a {valuation} pre-money valuation, after the {distractor_raise} from its "
+    "{prior_round} round.",
+    "Its {prior_round} round had drawn {distractor_raise}, but {company} was just getting started: "
+    "the {round} round pulled {raise} at a {valuation} pre-money valuation. Founders {founders} ran "
+    "the company; {advisor} advised it.",
+    "Long ago {company} took in {distractor_raise} during a {prior_round} round. Guided by advisor "
+    "{advisor} and started by {founders}, it later secured {raise} in its {round} round, at a "
+    "{valuation} pre-money valuation.",
+    "The {round} round at {company} landed {raise} on a {valuation} pre-money valuation, compared "
+    "with the {distractor_raise} of its {prior_round} chapter. Behind it: founders {founders}, "
+    "alongside advisor {advisor}.",
 ]
 
 
