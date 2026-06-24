@@ -387,12 +387,15 @@ def should_stop(elapsed_hours, planned_hours, max_hours):
     return (elapsed_hours + planned_hours) > max_hours
 
 
-def batch_repo_id(reward_mode, difficulty, seed, user, smoke=False):
-    """Per-run repo name. smoke=True uses a SEPARATE throwaway 'rlvr-batchtest-'
-    namespace so it can never touch or be confused with the real 'rlvr-taskA-' repos."""
+def batch_repo_id(reward_mode, difficulty, seed, user, smoke=False, task="A"):
+    """Per-run repo name. smoke=True uses a SEPARATE throwaway 'rlvr-batchtest-' namespace so it
+    can never touch or be confused with the real 'rlvr-task{A,B}-' repos. For task != 'A' the smoke
+    namespace is further tagged ('rlvr-batchtest-B-...') so a Task-B smoke can't collide with a
+    Task-A smoke either. Task='A' is unchanged."""
     if smoke:
-        return f"{user}/rlvr-batchtest-{reward_mode}-{difficulty}-seed{seed}"
-    return repo_id(reward_mode, difficulty, seed, user)
+        tag = "" if task == "A" else f"{task}-"
+        return f"{user}/rlvr-batchtest-{tag}{reward_mode}-{difficulty}-seed{seed}"
+    return repo_id(reward_mode, difficulty, seed, user, task)
 
 
 def batch_status_label(result):
@@ -417,13 +420,16 @@ def summarize_batch(runs, results, expected_repos, done_repos):
     return {"labels": labels, "missing": missing_runs(done_repos, expected_repos)}
 
 
-def _smoke_run_cell(reward_mode, difficulty, seed, out_root):
-    """Smoke twin of run_cell: tiny cfg.SMOKE settings + a throwaway rlvr-batchtest-
-    repo, so a whole batch finishes in minutes and never touches the 12 real repos.
+def _smoke_run_cell(reward_mode, difficulty, seed, out_root, task="A"):
+    """Smoke twin of run_cell: tiny cfg.SMOKE settings + a throwaway rlvr-batchtest- repo, so a
+    whole batch finishes in minutes and never touches the 12 real repos. task='A' is today's
+    behavior; task='B' (etc.) routes the SAME train_one with task=task (so the Task-B grader,
+    SYSTEM_PROMPT_B, dict-gold round-trip and reward fn are byte-identical to the real run) and
+    pushes to a task-tagged throwaway namespace.
 
-    It can't reuse run_cell itself: run_cell is frozen to the full config and asserts
-    the 256-item fixed count, which SMOKE deliberately violates. It reuses every other
-    helper, so it exercises the identical save / idempotency / status machinery.
+    It can't reuse run_cell itself: run_cell is frozen to the full config and asserts the 256-item
+    fixed count, which SMOKE deliberately violates. It reuses every other helper, so it exercises
+    the identical save / idempotency / status machinery.
     """
     import torch
     from huggingface_hub import repo_exists, whoami
@@ -432,8 +438,10 @@ def _smoke_run_cell(reward_mode, difficulty, seed, out_root):
     if not token:
         raise RuntimeError("An HF token is REQUIRED even for the smoke batch. Set HF_TOKEN.")
     user = whoami(token=token)["name"]
-    repo = batch_repo_id(reward_mode, difficulty, seed, user, smoke=True)
-    local_dir = Path(out_root) / f"smoke-{reward_mode}-{difficulty}-seed{seed}"
+    repo = batch_repo_id(reward_mode, difficulty, seed, user, smoke=True, task=task)
+    sub = (f"smoke-{reward_mode}-{difficulty}-seed{seed}" if task == "A"
+           else f"smoke-{task}-{reward_mode}-{difficulty}-seed{seed}")
+    local_dir = Path(out_root) / sub
     local_dir.mkdir(parents=True, exist_ok=True)
 
     if repo_exists(repo, token=token):
@@ -445,7 +453,7 @@ def _smoke_run_cell(reward_mode, difficulty, seed, out_root):
         return {"reward_mode": reward_mode, "difficulty": difficulty, "seed": seed,
                 "status": "skipped", "skipped": True, "runtime_sec": 0.0, "peak_mem_gb": 0.0,
                 "reward_history": [], "reward_trend": reward_trended_up([]),
-                "adapter_repo": repo, "repo": repo, "smoke": True}
+                "adapter_repo": repo, "repo": repo, "smoke": True, "task": task}
 
     commit = _git_short_sha()
     start = time.time()
@@ -455,11 +463,19 @@ def _smoke_run_cell(reward_mode, difficulty, seed, out_root):
     if reward_jsonl.exists():
         reward_jsonl.unlink()
 
+    # SMOKE keeps everything tiny (8 steps, 24 items, ...). For task != 'A' we DROP the SMOKE
+    # max_completion_length=256 override so the trainer uses the task's real completion length
+    # (Task B -> MAX_COMPLETION_LENGTH_B=384), proving the locked Task-B budget is wired. Task A
+    # is unchanged.
+    smoke_hp = dict(cfg.SMOKE)
+    if task != "A":
+        smoke_hp.pop("max_completion_length", None)
+
     status, error_msg, result = "ok", None, None
     with _RewardTee(reward_jsonl) as tee:
         try:
             result = train_one(reward_mode, difficulty, seed,
-                               str(local_dir / "adapter"), save_repo=repo, **cfg.SMOKE)
+                               str(local_dir / "adapter"), save_repo=repo, task=task, **smoke_hp)
         except Exception as exc:
             status = _classify_error(exc)
             error_msg = f"{type(exc).__name__}: {exc}"
@@ -474,6 +490,7 @@ def _smoke_run_cell(reward_mode, difficulty, seed, out_root):
     results["error"] = error_msg
     results["repo"] = repo
     results["smoke"] = True
+    results["task"] = task
     (local_dir / "results.json").write_text(
         json.dumps(results, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
     if status == "ok":
@@ -518,7 +535,7 @@ def run_batch(runs, out_root="/kaggle/working/runs", max_hours=11.0, smoke=False
         print(f"\n--- run {i}/{len(runs)}: {reward_mode}/{difficulty} seed{seed} ---")
         try:
             if smoke:
-                result = _smoke_run_cell(reward_mode, difficulty, seed, out_root)
+                result = _smoke_run_cell(reward_mode, difficulty, seed, out_root, task=task)
             else:
                 result = run_cell(reward_mode, difficulty, seed, out_root=out_root, task=task)
         except Exception as exc:

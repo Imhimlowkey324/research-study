@@ -86,6 +86,15 @@ def build_reward_func(reward_mode, task="A"):
     return reward_func
 
 
+def task_completion_length(task="A"):
+    """Frozen max-completion length for a task. Task B uses its LOCKED override
+    (``cfg.MAX_COMPLETION_LENGTH_B`` = 384) when set; otherwise the shared frozen value.
+    Task A always returns the shared value, so the Task-A path is byte-for-byte unchanged."""
+    if task == "B" and getattr(cfg, "MAX_COMPLETION_LENGTH_B", None) is not None:
+        return cfg.MAX_COMPLETION_LENGTH_B
+    return cfg.MAX_COMPLETION_LENGTH
+
+
 def to_grpo_dataset(items, task="A"):
     """Map our items to TRL's conversational format (rows of message-list + answer).
 
@@ -231,7 +240,7 @@ def train_one(reward_mode, difficulty, seed, out_dir, save_repo=None, task="A", 
     num_generations = hp.get("num_generations", cfg.NUM_GENERATIONS)
     max_steps = hp.get("max_steps", cfg.MAX_STEPS)
     max_prompt_length = hp.get("max_prompt_length", cfg.MAX_PROMPT_LENGTH)
-    max_completion_length = hp.get("max_completion_length", cfg.MAX_COMPLETION_LENGTH)
+    max_completion_length = hp.get("max_completion_length", task_completion_length(task))
     learning_rate = hp.get("learning_rate", cfg.LEARNING_RATE)
     kl_beta = hp.get("kl_beta", cfg.KL_BETA)
     grad_accum = hp.get("gradient_accumulation_steps", cfg.GRADIENT_ACCUMULATION_STEPS)

@@ -167,6 +167,21 @@ def test_batch_repo_id_real_vs_smoke_namespace():
         "alice/rlvr-batchtest-strict-easy-seed0"
 
 
+def test_batch_repo_id_taskB_smoke_never_collides_with_real():
+    # Task-B smoke -> a task-tagged THROWAWAY namespace (never a real rlvr-taskB- repo)
+    assert batch_repo_id("strict", "easy", 0, "alice", smoke=True, task="B") == \
+        "alice/rlvr-batchtest-B-strict-easy-seed0"
+    # Task-A smoke is unchanged by the task param
+    assert batch_repo_id("strict", "easy", 0, "alice", smoke=True, task="A") == \
+        "alice/rlvr-batchtest-strict-easy-seed0"
+    # non-smoke Task B -> the REAL rlvr-taskB- repo
+    assert batch_repo_id("loose", "easy_hard", 2, "bob", smoke=False, task="B") == \
+        repo_id("loose", "easy_hard", 2, "bob", "B") == "bob/rlvr-taskB-loose-easy_hard-seed2"
+    # the throwaway smoke name can NEVER equal any real cell repo (so idempotent-skip is safe)
+    assert batch_repo_id("strict", "easy", 0, "alice", smoke=True, task="B") != \
+        repo_id("strict", "easy", 0, "alice", "B")
+
+
 def test_batch_status_label():
     assert batch_status_label({"status": "ok"}) == "done"
     assert batch_status_label({"status": "skipped", "skipped": True}) == "skipped (already existed)"

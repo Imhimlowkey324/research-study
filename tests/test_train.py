@@ -4,9 +4,12 @@ Importing training.train_grpo must not import torch/trl/peft (they are deferred)
 so these run on a plain machine.
 """
 
+import json
+
 import pytest
 
-from study_config import SYSTEM_PROMPT
+import study_config as cfg
+from study_config import SYSTEM_PROMPT, SYSTEM_PROMPT_B
 from training.train_grpo import (
     TrainableParamError,
     adapter_is_loaded,
@@ -14,6 +17,7 @@ from training.train_grpo import (
     check_trainable_params,
     outputs_differ,
     rewards_all_identical,
+    task_completion_length,
     to_grpo_dataset,
 )
 
@@ -21,6 +25,34 @@ from training.train_grpo import (
 def _chat(text):
     """A TRL conversational completion: a one-message assistant turn."""
     return [{"role": "assistant", "content": text}]
+
+
+# --------------------------------------------------------------------------- #
+# Task-B training-path wiring (what the smoke proves, unit-tested without a GPU) #
+# --------------------------------------------------------------------------- #
+def test_task_completion_length_taskB_uses_locked_override(monkeypatch):
+    assert task_completion_length("A") == cfg.MAX_COMPLETION_LENGTH       # Task A unchanged
+    assert task_completion_length("B") == cfg.MAX_COMPLETION_LENGTH_B == 384
+    monkeypatch.setattr(cfg, "MAX_COMPLETION_LENGTH_B", None)             # falls back if unset
+    assert task_completion_length("B") == cfg.MAX_COMPLETION_LENGTH
+    assert task_completion_length("A") == cfg.MAX_COMPLETION_LENGTH       # A never affected
+
+
+def test_taskB_reward_uses_grader_b_and_json_gold_roundtrip():
+    gold = {"company": "Acme", "round": "Series A", "raise": 5000000,
+            "valuation": 20000000, "founders": ["Jo Lee"]}
+    rows = to_grpo_dataset([{"prompt": "Acme raised $5M ...", "answer": gold, "difficulty": "hard"}],
+                           task="B")
+    # SYSTEM_PROMPT_B is the system prompt (the JSON prompt, NOT Task A's math prompt)
+    assert rows[0]["prompt"][0]["content"] == SYSTEM_PROMPT_B
+    assert rows[0]["prompt"][0]["content"] != SYSTEM_PROMPT
+    # dict gold is json.dumps'd into the dataset 'answer' column
+    assert isinstance(rows[0]["answer"], str) and json.loads(rows[0]["answer"]) == gold
+    # the reward fn json.loads's it back and grades per-field with grader_b -> reward VARIES
+    rf = build_reward_func("strict", task="B")
+    perfect, wrong = json.dumps(gold), json.dumps({**gold, "raise": 999})
+    r = rf(completions=[perfect, wrong], answer=[rows[0]["answer"], rows[0]["answer"]])
+    assert r[0] == 1.0 and r[1] == pytest.approx(0.8)   # 4/5 fields right -> not flat (round-trip OK)
 
 
 # --------------------------------------------------------------------------- #
