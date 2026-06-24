@@ -23,10 +23,11 @@ SYSTEM_PROMPT_B = (
     '20000000, "founders": ["Jo Lee"]}'
 )
 
-# Task-B-only override, to be set by the Task B pilot (None -> use the shared frozen
-# MAX_COMPLETION_LENGTH). JSON output may want more room than a single number. NOT wired
-# yet and NOT a change to any Task-A value.
-MAX_COMPLETION_LENGTH_B = None
+# Task-B-only override. LOCKED at 384 by the Phase-5 Part-2 pilot/protocol ruling: it is
+# both the Task-B training completion length AND the Task-B judging max_new_tokens (pilot max
+# tokens seen = 105, so 384 has wide headroom). Excluded from snapshot() (ends with _B), so no
+# Task-A value changes. Feeds judge_config_B -> JUDGE_CONFIG_B_SHA256 (PHASE5_JUDGE_PROTOCOL_B.md).
+MAX_COMPLETION_LENGTH_B = 384
 
 # Generation budget.
 MAX_NEW_TOKENS = 768
