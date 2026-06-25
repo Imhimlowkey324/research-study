@@ -1,0 +1,111 @@
+{
+  "adapter_repo_id": "zachmeister/rlvr-taskA-loose-easy-seed0",
+  "reward_mode": "loose",
+  "difficulty": "easy",
+  "seed": 0,
+  "is_baseline": false,
+  "git_commit": "c2508f9",
+  "ood_set_sha256": "4851f68bdce310efaef65318b1fc7f10888c60936609887c8dd7eeaa1d8b6228",
+  "judge_config_sha256": "d0ebaeb76d61d6b4caa8e706f410925994ed81297f1d57802b87c9b8480c502e",
+  "grader_version": "graders.grader@c2508f9",
+  "sample_seed": 0,
+  "batch_size": 16,
+  "timestamp": "2026-06-23T22:07:05.012026+00:00",
+  "runtime_sec": 1081.1909928321838,
+  "model_name": "Qwen/Qwen2.5-1.5B-Instruct",
+  "judge_config": {
+    "model_name": "Qwen/Qwen2.5-1.5B-Instruct",
+    "dtype": "fp16",
+    "system_prompt": "You solve a short math problem. Compute ownership% = raise / (pre_money + raise) * 100. Show at most 2 short steps, then STOP and write exactly: 'The answer is X' where X is the number rounded to 2 decimals. Example: 'Raise 5M, pre-money 20M. Post-money = 25M. 5/25*100 = 20. The answer is 20.'",
+    "max_new_tokens": 768,
+    "greedy_gen_kwargs": {
+      "do_sample": false,
+      "max_new_tokens": 768
+    },
+    "sample_gen_kwargs": {
+      "do_sample": true,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "max_new_tokens": 768
+    },
+    "pass_k": 4,
+    "sample_seed": 0
+  },
+  "config_snapshot": {
+    "MODEL_NAME": "Qwen/Qwen2.5-1.5B-Instruct",
+    "SYSTEM_PROMPT": "You solve a short math problem. Compute ownership% = raise / (pre_money + raise) * 100. Show at most 2 short steps, then STOP and write exactly: 'The answer is X' where X is the number rounded to 2 decimals. Example: 'Raise 5M, pre-money 20M. Post-money = 25M. 5/25*100 = 20. The answer is 20.'",
+    "MAX_NEW_TOKENS": 768,
+    "GREEDY_GEN_KWARGS": {
+      "do_sample": false,
+      "max_new_tokens": 768
+    },
+    "PASS_K": 4,
+    "SAMPLE_TEMPERATURE": 0.7,
+    "SAMPLE_TOP_P": 0.95,
+    "SAMPLE_GEN_KWARGS": {
+      "do_sample": true,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "max_new_tokens": 768
+    },
+    "DATA_SEED": 0,
+    "N_EASY": 500,
+    "N_HARD": 500,
+    "N_OOD_EASY": 100,
+    "N_OOD_HARD": 100,
+    "EVAL_SEED": 0,
+    "LORA_R": 16,
+    "LORA_ALPHA": 32,
+    "LORA_DROPOUT": 0.05,
+    "LORA_TARGET_MODULES": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ],
+    "NUM_GENERATIONS": 4,
+    "LEARNING_RATE": 1e-05,
+    "KL_BETA": 0.04,
+    "MAX_PROMPT_LENGTH": 512,
+    "MAX_COMPLETION_LENGTH": 384,
+    "GRAD_CHECKPOINTING": true,
+    "GRAD_CLIP": 1.0,
+    "GRADIENT_ACCUMULATION_STEPS": 6,
+    "TRAIN_EXAMPLES": 256,
+    "MAX_STEPS": 200,
+    "LOGGING_STEPS": 1,
+    "USE_FP16": true,
+    "USE_BF16": false,
+    "SMOKE": {
+      "max_steps": 8,
+      "num_generations": 4,
+      "max_completion_length": 256,
+      "train_examples": 24,
+      "logging_steps": 1,
+      "gradient_accumulation_steps": 1
+    }
+  },
+  "metrics": {
+    "easy": {
+      "n": 100,
+      "strict_pct": 61.0,
+      "format_valid_pct": 100.0,
+      "loose_pct": 100.0,
+      "passk_pct": 64.0,
+      "cut_off": 0,
+      "gap_pp": 39.0
+    },
+    "hard": {
+      "n": 100,
+      "strict_pct": 12.0,
+      "format_valid_pct": 100.0,
+      "loose_pct": 83.0,
+      "passk_pct": 18.0,
+      "cut_off": 0,
+      "gap_pp": 71.0
+    }
+  }
+}

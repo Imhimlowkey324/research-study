@@ -1,0 +1,155 @@
+{
+  "task": "B",
+  "adapter_repo_id": "zachmeister/rlvr-taskB-loose-easy-seed1",
+  "reward_mode": "loose",
+  "difficulty": "easy",
+  "seed": 1,
+  "is_baseline": false,
+  "git_commit": "a963b72",
+  "ood_set_b_sha256": "13a7a3c49bf74f0aa912aa69c50987da5b3542a0043a9c85a7cff8f362fd1c9f",
+  "judge_config_b_sha256": "fc24580c19a446b8abe67dd8fd4656c376e304cd6eda6fc382836f6e5314f8c2",
+  "grader_version": "graders.grader_b@a963b72",
+  "sample_seed": 0,
+  "batch_size": 16,
+  "timestamp": "2026-06-25T16:30:56.472852+00:00",
+  "runtime_sec": 491.2052147388458,
+  "model_name": "Qwen/Qwen2.5-1.5B-Instruct",
+  "judge_config_b": {
+    "task": "B",
+    "model_name": "Qwen/Qwen2.5-1.5B-Instruct",
+    "dtype": "fp16",
+    "system_prompt": "You extract structured data from a short text. Output ONLY a JSON object with keys company, round, raise, valuation, founders -- no prose and no code fence. raise is the amount raised in dollars and valuation is the pre-money valuation in dollars, both as plain integers; founders is a list of names. Example: text \"Acme raised $5M in its Series A at a $20M pre-money valuation, founded by Jo Lee.\" -> {\"company\": \"Acme\", \"round\": \"Series A\", \"raise\": 5000000, \"valuation\": 20000000, \"founders\": [\"Jo Lee\"]}",
+    "max_completion_length_b": 384,
+    "greedy_gen_kwargs": {
+      "do_sample": false,
+      "max_new_tokens": 384
+    },
+    "sample_gen_kwargs": {
+      "do_sample": true,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "max_new_tokens": 384
+    },
+    "pass_k": 4,
+    "sample_seed": 0
+  },
+  "config_snapshot": {
+    "MODEL_NAME": "Qwen/Qwen2.5-1.5B-Instruct",
+    "SYSTEM_PROMPT": "You solve a short math problem. Compute ownership% = raise / (pre_money + raise) * 100. Show at most 2 short steps, then STOP and write exactly: 'The answer is X' where X is the number rounded to 2 decimals. Example: 'Raise 5M, pre-money 20M. Post-money = 25M. 5/25*100 = 20. The answer is 20.'",
+    "MAX_NEW_TOKENS": 768,
+    "GREEDY_GEN_KWARGS": {
+      "do_sample": false,
+      "max_new_tokens": 768
+    },
+    "PASS_K": 4,
+    "SAMPLE_TEMPERATURE": 0.7,
+    "SAMPLE_TOP_P": 0.95,
+    "SAMPLE_GEN_KWARGS": {
+      "do_sample": true,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "max_new_tokens": 768
+    },
+    "DATA_SEED": 0,
+    "N_EASY": 500,
+    "N_HARD": 500,
+    "N_OOD_EASY": 100,
+    "N_OOD_HARD": 100,
+    "EVAL_SEED": 0,
+    "LORA_R": 16,
+    "LORA_ALPHA": 32,
+    "LORA_DROPOUT": 0.05,
+    "LORA_TARGET_MODULES": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ],
+    "NUM_GENERATIONS": 4,
+    "LEARNING_RATE": 1e-05,
+    "KL_BETA": 0.04,
+    "MAX_PROMPT_LENGTH": 512,
+    "MAX_COMPLETION_LENGTH": 384,
+    "GRAD_CHECKPOINTING": true,
+    "GRAD_CLIP": 1.0,
+    "GRADIENT_ACCUMULATION_STEPS": 6,
+    "TRAIN_EXAMPLES": 256,
+    "MAX_STEPS": 200,
+    "LOGGING_STEPS": 1,
+    "USE_FP16": true,
+    "USE_BF16": false,
+    "SMOKE": {
+      "max_steps": 8,
+      "num_generations": 4,
+      "max_completion_length": 256,
+      "train_examples": 24,
+      "logging_steps": 1,
+      "gradient_accumulation_steps": 1
+    }
+  },
+  "metrics": {
+    "easy": {
+      "n": 100,
+      "all5_pct": 93.0,
+      "strict_mean_pct": 98.2,
+      "format_valid_pct": 100.0,
+      "passk_all5_pct": 96.0,
+      "passk_field_pct": 98.8,
+      "cut_off": 0,
+      "field_strict_pct": {
+        "company": 100.0,
+        "round": 100.0,
+        "raise": 94.0,
+        "valuation": 97.0,
+        "founders": 100.0
+      },
+      "field_loose_pct": {
+        "company": 100.0,
+        "round": 100.0,
+        "raise": 94.0,
+        "valuation": 97.0,
+        "founders": 100.0
+      },
+      "field_gap_pp": {
+        "company": 0.0,
+        "round": 0.0,
+        "raise": 0.0,
+        "valuation": 0.0,
+        "founders": 0.0
+      }
+    },
+    "hard": {
+      "n": 100,
+      "all5_pct": 17.0,
+      "strict_mean_pct": 62.8,
+      "format_valid_pct": 100.0,
+      "passk_all5_pct": 28.0,
+      "passk_field_pct": 70.4,
+      "cut_off": 0,
+      "field_strict_pct": {
+        "company": 100.0,
+        "round": 45.0,
+        "raise": 42.0,
+        "valuation": 60.0,
+        "founders": 67.0
+      },
+      "field_loose_pct": {
+        "company": 100.0,
+        "round": 45.0,
+        "raise": 42.0,
+        "valuation": 75.0,
+        "founders": 67.0
+      },
+      "field_gap_pp": {
+        "company": 0.0,
+        "round": 0.0,
+        "raise": 0.0,
+        "valuation": 15.0,
+        "founders": 0.0
+      }
+    }
+  }
+}

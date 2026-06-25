@@ -1,0 +1,114 @@
+=== worst-gap transcripts: loose/easy_hard (all seeds) — top 8 of 600 ===
+(expectation §4: largest gap in loose-reward cells / hard band; read regardless of gap size)
+
+[1] band=easy gold=8.2 strict=0 loose=1 gap=1
+    prompt: Backing Meridian AI at $28M pre-money, Brookline Ventures put up $2.5M. What ownership percentage does the investor receive in this round? Think step by step, then give your final answer on its own line as 'The answer is X' (for example: The answer is 16.13).
+    output: Ownership % = Raise / (Pre-money + Raise) * 100
+
+Ownership % = 2.5M / (28M + 2.5M) * 100
+
+Ownership % = 2.5M / 30.5M * 100
+
+Ownership % = 0.08214 * 100
+
+Ownership % = 8.214%
+
+The answer is 8.21.
+
+[2] band=hard gold=28.31 strict=0 loose=1 gap=1
+    prompt: Quanta Labs wrapped the prior year at $2,000,000 in top-line revenue. After much back-and-forth, Ironwood poured in $770,000 and the pre-money number came to $1.95M. What ownership percentage does the investor receive in this round? Think step by step, then give your final answer on its own line as 'The answer is X' (for example: The answer is 16.13).
+    output: Step 1: Calculate the post-money valuation.
+Post-money valuation = Pre-money valuation + Raise amount
+Post-money valuation = $1,950,000 + $770,000
+Post-money valuation = $2,720,000
+
+Step 2: Calculate the ownership percentage.
+Ownership percentage = Raise amount / Post-money valuation * 100
+Ownership percentage = $770,000 / $2,720,000 * 100
+Ownership percentage ≈ 28.24%
+
+The answer is 28.24.
+
+[3] band=easy gold=19.1 strict=0 loose=1 gap=1
+    prompt: A $8.5M financing went into Driftwood against a pre-money figure of $36M. What ownership percentage does the investor receive in this round? Think step by step, then give your final answer on its own line as 'The answer is X' (for example: The answer is 16.13).
+    output: Ownership % = Raise / (Pre-money + Raise) * 100
+Ownership % = 8.5M / (36M + 8.5M) * 100
+Ownership % = 8.5M / 44.5M * 100
+Ownership % = 0.1927 * 100
+Ownership % = 19.27
+
+The answer is 19.27.
+
+[4] band=easy gold=28.3 strict=0 loose=1 gap=1
+    prompt: Backing Helix BioSystems at $19M pre-money, Delta Growth put up $7.5M. What ownership percentage does the investor receive in this round? Think step by step, then give your final answer on its own line as 'The answer is X' (for example: The answer is 16.13).
+    output: To calculate the ownership percentage, we use the formula:
+
+Ownership % = Raise / (Pre-money + Raise) * 100
+
+Given:
+- Raise = $7.5M
+- Pre-money = $19M
+
+Plugging these values into the formula:
+
+Ownership % = 7.5 / (19 + 7.5) * 100
+Ownership % = 7.5 / 26.5 * 100
+Ownership % ≈ 28.24%
+
+The answer is 28.24.
+
+[5] band=hard gold=35.54 strict=0 loose=1 gap=1
+    prompt: Tidewater wrapped the prior year at $2,000,000 in top-line revenue. After much back-and-forth, Cedar Partners poured in $5,900,000 and the pre-money number came to $10.7 million. What ownership percentage does the investor receive in this round? Think step by step, then give your final answer on its own line as 'The answer is X' (for example: The answer is 16.13).
+    output: Step 1: Calculate the post-money valuation.
+Post-money valuation = Pre-money valuation + Raise amount
+Post-money valuation = $10.7 million + $5.9 million
+Post-money valuation = $16.6 million
+
+Step 2: Calculate the ownership percentage.
+Ownership percentage = Raise amount / Post-money valuation * 100
+Ownership percentage = $5.9 million / $16.6 million * 100
+Ownership percentage ≈ 35.48%
+
+The answer
+
+[6] band=hard gold=36.63 strict=0 loose=1 gap=1
+    prompt: Over a long negotiation, Delta Growth threw its weight behind Tidewater with $8,900,000; the pre-money number was hammered out at 15,400,000. Around 120 people work there. What ownership percentage does the investor receive in this round? Think step by step, then give your final answer on its own line as 'The answer is X' (for example: The answer is 16.13).
+    output: Step 1: Calculate the post-money amount.
+Post-money = Pre-money + Raise
+Post-money = 15,400,000 + 8,900,000
+Post-money = 24,300,000
+
+Step 2: Calculate the ownership percentage.
+Ownership% = Raise / Post-money * 100
+Ownership% = 8,900,000 / 24,300,000 * 100
+Ownership% ≈ 36.70%
+
+The answer is 36.70.
+
+[7] band=easy gold=19.3 strict=0 loose=1 gap=1
+    prompt: Backing Northwind at $23M pre-money, Acacia Capital put up $5.5M. What ownership percentage does the investor receive in this round? Think step by step, then give your final answer on its own line as 'The answer is X' (for example: The answer is 16.13).
+    output: Ownership % = Raise / (Pre-money + Raise) * 100
+
+Ownership % = 5.5M / (23M + 5.5M) * 100
+
+Ownership % = 5.5M / 28.5M * 100
+
+Ownership % = 0.1947 * 100
+
+Ownership % = 19.47%
+
+The answer is 19.47.
+
+[8] band=hard gold=20.73 strict=0 loose=1 gap=1
+    prompt: Established back in 2009, Ember Health works in enterprise software. Its recent raise had Cedar Partners supplying $1.7 million against a pre-money figure of 6,500,000. What ownership percentage does the investor receive in this round? Think step by step, then give your final answer on its own line as 'The answer is X' (for example: The answer is 16.13).
+    output: Step 1: Calculate the post-money amount.
+Post-money = Pre-money + Raise
+Post-money = 6,500,000 + 1,700,000
+Post-money = 8,200,000
+
+Step 2: Calculate the ownership percentage.
+Ownership% = Raise / Post-money * 100
+Ownership% = 1,700,000 / 8,200,000 * 100
+Ownership% ≈ 20.74%
+
+The answer is 20.74.
